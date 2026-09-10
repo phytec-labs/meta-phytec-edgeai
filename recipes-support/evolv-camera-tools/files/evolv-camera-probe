@@ -1,0 +1,86 @@
+#!/bin/sh
+# evolv-camera-probe -- report the camera / encoder / GStreamer environment.
+# Read-only. Run this first; evolv-camera-test assumes it comes back clean.
+
+set -u
+
+PASS=0
+FAIL=0
+
+ok()   { printf '  [ ok ] %s\n' "$1"; PASS=$((PASS+1)); }
+bad()  { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
+note() { printf '         %s\n' "$1"; }
+hdr()  { printf '\n== %s ==\n' "$1"; }
+
+hdr "Kernel"
+printf '  %s\n' "$(uname -srvm)"
+case "$(uname -v)" in
+    *PREEMPT_RT*) note "PREEMPT_RT kernel" ;;
+    *)            note "standard (non-RT) kernel" ;;
+esac
+
+hdr "Driver modules"
+for m in uvcvideo e5010_jpeg_enc wave5; do
+    if grep -q "^${m} " /proc/modules 2>/dev/null; then
+        ok "$m loaded"
+    else
+        # May be built in rather than modular, or simply not probed yet.
+        bad "$m not loaded"
+    fi
+done
+note "uvcvideo appears only once a USB camera is plugged in."
+
+hdr "V4L2 devices"
+CAMERA=""
+JPEGENC=""
+H264ENC=""
+for d in /dev/video*; do
+    [ -e "$d" ] || continue
+    drv=$(v4l2-ctl -d "$d" --info 2>/dev/null | sed -n 's/.*Driver name *: *//p' | head -1)
+    card=$(v4l2-ctl -d "$d" --info 2>/dev/null | sed -n 's/.*Card type *: *//p' | head -1)
+    bus=$(v4l2-ctl -d "$d" --info 2>/dev/null | sed -n 's/.*Bus info *: *//p' | head -1)
+    printf '  %-14s %-12s %s\n' "$d" "${drv:-?}" "${card:-?}"
+    [ -n "$bus" ] && note "$bus"
+    case "$drv" in
+        uvcvideo)
+            # UVC exposes a metadata node alongside the video node; only the
+            # video node reports capture formats.
+            if [ -z "$CAMERA" ] && v4l2-ctl -d "$d" --list-formats 2>/dev/null | grep -q "\["; then
+                CAMERA="$d"
+            fi
+            ;;
+        e5010*)    [ -z "$JPEGENC" ] && JPEGENC="$d" ;;
+        wave5-enc) [ -z "$H264ENC" ] && H264ENC="$d" ;;
+    esac
+done
+
+# udev gives the codec nodes stable names -- prefer them over the numbered
+# nodes, which shift when a USB camera is plugged in.
+[ -e /dev/video-enc0 ] && H264ENC=/dev/video-enc0
+
+[ -n "$CAMERA" ]  && ok "USB camera:   $CAMERA"  || bad "no uvcvideo camera found"
+[ -n "$JPEGENC" ] && ok "JPEG encoder: $JPEGENC" || bad "no e5010 JPEG encoder node"
+[ -n "$H264ENC" ] && ok "H.264 encoder: $H264ENC" || bad "no wave5 encoder node"
+
+if [ -n "$CAMERA" ]; then
+    hdr "Camera formats ($CAMERA)"
+    v4l2-ctl -d "$CAMERA" --list-formats-ext 2>/dev/null \
+        | sed -n "s/^\s*\[/  [/p;s/^\s*Size/    Size/p" | head -20
+    note "Prefer YUYV for encoder tests -- MJPEG output would need decoding first."
+fi
+
+hdr "GStreamer elements requested by Evolv"
+for e in v4l2jpegenc v4l2h264enc tcpserversink udpsink rtpjpegpay rtph264pay; do
+    if gst-inspect-1.0 "$e" >/dev/null 2>&1; then
+        ok "$e"
+    else
+        bad "$e missing"
+    fi
+done
+
+hdr "TIOVX dewarp"
+note "run evolv-tiovx-probe for the TIOVX/C7x bring-up check"
+
+hdr "Summary"
+printf '  %d passed, %d failed\n\n' "$PASS" "$FAIL"
+[ "$FAIL" -eq 0 ]
