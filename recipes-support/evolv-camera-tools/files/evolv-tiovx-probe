@@ -1,0 +1,117 @@
+#!/bin/sh
+# evolv-tiovx-probe -- bring-up check for the TIOVX hardware dewarp path.
+#
+# Staged deliberately, because the failure modes are very different:
+#   1. plugin loads          -> the extracted meta-edgeai userspace is sound
+#   2. C7x firmware loads    -> remoteproc + carveouts are correct
+#   3. element instantiates  -> the graph can be built
+#   4. dewarp runs           -> needs a lens LUT; see the note at the bottom
+#
+# A failure at 3 or 4 with 1 and 2 passing is a configuration problem, not a
+# broken build -- the message says which.
+
+set -u
+
+PASS=0
+FAIL=0
+ok()   { printf '  [ ok ] %s\n' "$1"; PASS=$((PASS+1)); }
+bad()  { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
+note() { printf '         %s\n' "$1"; }
+hdr()  { printf '\n== %s ==\n' "$1"; }
+
+hdr "1. TIOVX GStreamer plugin"
+for e in tiovxldc tiovxmultiscaler; do
+    if gst-inspect-1.0 "$e" >/dev/null 2>&1; then
+        ok "$e registers"
+    else
+        bad "$e does not register"
+    fi
+done
+# Anything else the plugin shipped, for information.
+others=$(gst-inspect-1.0 tiovx 2>/dev/null | sed -n 's/^ *\(tiovx[a-z0-9]*\):.*/\1/p' | tr '\n' ' ')
+[ -n "$others" ] && note "plugin provides: $others"
+
+hdr "2. Shared libraries resolve"
+SO=$(find /usr/lib -name "libgsttiovx*.so*" 2>/dev/null | head -1)
+if [ -n "$SO" ]; then
+    missing=$(ldd "$SO" 2>/dev/null | grep -c "not found" || true)
+    if [ "${missing:-0}" -eq 0 ]; then
+        ok "libgsttiovx dependencies satisfied"
+    else
+        bad "$missing unresolved shared libraries"
+        ldd "$SO" 2>/dev/null | grep "not found" | sed 's/^/         /'
+    fi
+    for l in libtivision_apps libedgeai-tiovx-modules libedgeai-tiovx-kernels; do
+        f=$(find /usr/lib -name "${l}.so*" 2>/dev/null | head -1)
+        [ -n "$f" ] && note "$(basename "$f")"
+    done
+else
+    bad "libgsttiovx not installed"
+fi
+
+hdr "3. C7x DSP remoteproc"
+# The DT firmware-name is am62a-c71_0-fw; meta-ti-bsp points it at
+# dsp_edgeai_c7x_1_release_strip.out for am62axx.
+if [ -e /lib/firmware/am62a-c71_0-fw ]; then
+    ok "firmware present: $(readlink -f /lib/firmware/am62a-c71_0-fw | sed 's|.*/||')"
+else
+    bad "am62a-c71_0-fw missing from /lib/firmware"
+fi
+
+found_c7x=0
+for r in /sys/class/remoteproc/remoteproc*; do
+    [ -e "$r/name" ] || continue
+    n=$(cat "$r/name" 2>/dev/null)
+    s=$(cat "$r/state" 2>/dev/null)
+    printf '  %-28s %s\n' "$n" "$s"
+    case "$n" in
+        *7e000000*|*c7x*|*dsp*)
+            found_c7x=1
+            [ "$s" = "running" ] && ok "C7x is running" || bad "C7x state is '$s', expected running"
+            ;;
+    esac
+done
+[ "$found_c7x" -eq 0 ] && bad "no C7x remoteproc node found"
+
+dmesg 2>/dev/null | grep -iE "remoteproc.*(c71|7e000000)" | tail -3 | sed 's/^/         /'
+
+hdr "4. Element instantiates"
+# Build the element without running a graph. This separates "the plugin is
+# broken" from "the pipeline needs configuration".
+if gst-inspect-1.0 tiovxldc >/dev/null 2>&1; then
+    out=$(timeout -k 5 20 gst-launch-1.0 -q \
+            videotestsrc num-buffers=1 ! video/x-raw,format=NV12,width=640,height=480 \
+            ! tiovxldc ! fakesink 2>&1)
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        ok "tiovxldc ran a buffer through (unexpected without a LUT, but good)"
+    else
+        case "$out" in
+            *[Ll]ut*|*LUT*|*dcc*|*DCC*|*mesh*)
+                note "tiovxldc needs a lens LUT/DCC file -- expected, see below"
+                ok "element instantiated (failed only on missing LUT)"
+                ;;
+            *"no element"*|*"not found"*)
+                bad "element could not be created -- plugin did not load"
+                ;;
+            *)
+                bad "tiovxldc failed (rc=$rc)"
+                printf '%s\n' "$out" | tail -6 | sed 's/^/         /'
+                ;;
+        esac
+    fi
+fi
+
+hdr "Summary"
+printf '  %d passed, %d failed\n' "$PASS" "$FAIL"
+cat <<'EOF'
+
+  NOTE ON CORRECTNESS
+  tiovxldc performs a mesh remap driven by a lens-distortion LUT generated for a
+  specific lens. A USB webcam (e.g. Logitech C920) is rectilinear, so there is no
+  distortion to correct and no meaningful LUT -- this probe therefore proves the
+  plugin loads, the C7x runs, and the graph builds, but NOT that dewarp output is
+  geometrically correct. That requires the target fisheye module and its LUT.
+
+EOF
+[ "$FAIL" -eq 0 ]
