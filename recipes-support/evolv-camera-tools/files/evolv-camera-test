@@ -1,0 +1,158 @@
+#!/bin/sh
+# evolv-camera-test -- exercise the capture / hardware-encode / stream path.
+#
+# Every test is wrapped in `timeout -k` so a wedged encoder cannot hang the
+# harness. That matters on this SoC: a stalled e5010 leaves its streaming
+# thread in D state, where SIGTERM will not reach it.
+
+set -u
+
+HOST=127.0.0.1
+PORT=5000
+SECONDS_PER_TEST=5
+WIDTH=1280
+HEIGHT=720
+OUTDIR=/tmp/evolv-camera-test
+
+usage() {
+    cat <<EOF
+Usage: evolv-camera-test [options]
+
+  --host ADDR    udpsink destination (default: $HOST)
+  --port N       udpsink port (default: $PORT)
+  --time N       seconds per streaming test (default: $SECONDS_PER_TEST)
+  --size WxH     capture size (default: ${WIDTH}x${HEIGHT})
+  --frames N     frames for the encoder soak test (default: 60)
+  -h, --help     this message
+EOF
+}
+
+FRAMES=60
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --host)   HOST=$2; shift 2 ;;
+        --port)   PORT=$2; shift 2 ;;
+        --time)   SECONDS_PER_TEST=$2; shift 2 ;;
+        --frames) FRAMES=$2; shift 2 ;;
+        --size)   WIDTH=${2%x*}; HEIGHT=${2#*x}; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) printf 'unknown option: %s\n' "$1" >&2; usage; exit 2 ;;
+    esac
+done
+
+PASS=0
+FAIL=0
+ok()  { printf '  [ ok ] %s\n' "$1"; PASS=$((PASS+1)); }
+bad() { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
+
+find_camera() {
+    for d in /dev/video*; do
+        [ -e "$d" ] || continue
+        drv=$(v4l2-ctl -d "$d" --info 2>/dev/null | sed -n 's/.*Driver name *: *//p' | head -1)
+        [ "$drv" = "uvcvideo" ] || continue
+        # Skip the UVC metadata node -- it has no capture formats.
+        v4l2-ctl -d "$d" --list-formats 2>/dev/null | grep -q "\[" || continue
+        printf '%s' "$d"; return 0
+    done
+    return 1
+}
+
+# e5010 IRQ count -- should advance by exactly one per encoded frame. A count
+# that stops advancing while frames are still being fed is the stale-TLB hang.
+jpeg_irqs() {
+    awk '/jpeg|e5010/ {s=0; for (i=2; i<=NF; i++) if ($i ~ /^[0-9]+$/) s+=$i; print s; exit}' \
+        /proc/interrupts 2>/dev/null
+    :
+}
+
+run() {
+    desc=$1; shift
+    printf '\n-- %s\n' "$desc"
+    if timeout -k 5 $((SECONDS_PER_TEST + 20)) "$@" >/tmp/evolv-gst.log 2>&1; then
+        ok "$desc"
+        return 0
+    fi
+    rc=$?
+    bad "$desc (rc=$rc)"
+    [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ] && printf '         timed out -- likely encoder stall\n'
+    tail -5 /tmp/evolv-gst.log | sed 's/^/         /'
+    return 1
+}
+
+rm -rf "$OUTDIR"; mkdir -p "$OUTDIR"
+
+CAM=$(find_camera) || true
+if [ -n "${CAM:-}" ]; then
+    printf 'Camera: %s at %sx%s\n' "$CAM" "$WIDTH" "$HEIGHT"
+else
+    printf 'No USB camera found -- camera tests will be skipped.\n'
+fi
+
+##############################################################################
+printf '\n=== 1. Hardware JPEG encoder (no camera) ===\n'
+# Evolv's exact reproducer. A static pattern must yield identical frame
+# hashes; checkers-8 is stable where smpte is not (its noise block changes
+# every frame, which would mask corruption).
+IRQ_BEFORE=$(jpeg_irqs)
+if run "videotestsrc -> v4l2jpegenc -> multifilesink ($FRAMES frames)" \
+    gst-launch-1.0 -q \
+        videotestsrc pattern=checkers-8 num-buffers="$FRAMES" \
+        ! "video/x-raw,format=NV12,width=$WIDTH,height=$HEIGHT" \
+        ! v4l2jpegenc \
+        ! multifilesink location="$OUTDIR/frame%04d.jpg"
+then
+    COUNT=$(find "$OUTDIR" -name 'frame*.jpg' | wc -l)
+    HASHES=$(md5sum "$OUTDIR"/frame*.jpg 2>/dev/null | awk '{print $1}' | sort -u | wc -l)
+    IRQ_AFTER=$(jpeg_irqs)
+    printf '         frames=%s  distinct hashes=%s' "$COUNT" "$HASHES"
+    if [ -n "${IRQ_BEFORE:-}" ] && [ -n "${IRQ_AFTER:-}" ]; then
+        printf '  irq delta=%s' "$((IRQ_AFTER - IRQ_BEFORE))"
+    fi
+    printf '\n'
+    [ "$COUNT" -eq "$FRAMES" ] && ok "all $FRAMES frames encoded" \
+                               || bad "only $COUNT/$FRAMES frames"
+    [ "$HASHES" -eq 1 ] && ok "static pattern -> one distinct hash" \
+                        || bad "$HASHES distinct hashes from a static pattern (corruption)"
+fi
+
+##############################################################################
+if [ -n "${CAM:-}" ]; then
+    printf '\n=== 2. Camera capture ===\n'
+    run "camera -> raw file" \
+        gst-launch-1.0 -q \
+            v4l2src device="$CAM" num-buffers=30 \
+            ! "video/x-raw,width=$WIDTH,height=$HEIGHT" \
+            ! filesink location="$OUTDIR/capture.raw"
+
+    printf '\n=== 3. Camera -> hardware JPEG -> RTP over UDP ===\n'
+    run "camera -> v4l2jpegenc -> rtpjpegpay -> udpsink $HOST:$PORT" \
+        gst-launch-1.0 -q -e \
+            v4l2src device="$CAM" num-buffers=$((SECONDS_PER_TEST * 30)) \
+            ! "video/x-raw,width=$WIDTH,height=$HEIGHT" \
+            ! videoconvert ! "video/x-raw,format=NV12" \
+            ! v4l2jpegenc ! rtpjpegpay ! udpsink host="$HOST" port="$PORT"
+
+    printf '\n=== 4. Camera -> hardware H.264 (Wave5) -> RTP over UDP ===\n'
+    run "camera -> v4l2h264enc -> rtph264pay -> udpsink $HOST:$((PORT + 2))" \
+        gst-launch-1.0 -q -e \
+            v4l2src device="$CAM" num-buffers=$((SECONDS_PER_TEST * 30)) \
+            ! "video/x-raw,width=$WIDTH,height=$HEIGHT" \
+            ! videoconvert ! "video/x-raw,format=NV12" \
+            ! v4l2h264enc ! h264parse ! rtph264pay ! udpsink host="$HOST" port="$((PORT + 2))"
+
+    printf '\n=== 5. Camera -> hardware H.264 -> TCP server ===\n'
+    printf '     (listening on :%s -- exercises tcpserversink)\n' "$((PORT + 4))"
+    run "camera -> v4l2h264enc -> tcpserversink :$((PORT + 4))" \
+        gst-launch-1.0 -q -e \
+            v4l2src device="$CAM" num-buffers=$((SECONDS_PER_TEST * 30)) \
+            ! "video/x-raw,width=$WIDTH,height=$HEIGHT" \
+            ! videoconvert ! "video/x-raw,format=NV12" \
+            ! v4l2h264enc ! h264parse ! matroskamux streamable=true \
+            ! tcpserversink host=0.0.0.0 port="$((PORT + 4))"
+fi
+
+##############################################################################
+printf '\n=== Summary ===\n'
+printf '  %d passed, %d failed\n' "$PASS" "$FAIL"
+printf '  artefacts in %s, gst log in /tmp/evolv-gst.log\n\n' "$OUTDIR"
+[ "$FAIL" -eq 0 ]
