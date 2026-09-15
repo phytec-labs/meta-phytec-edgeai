@@ -15,12 +15,20 @@ inherit packagegroup
 # firmware-name in k3-am62a-main.dtsi), and it reaches the image through
 # packagegroup-coprocessor, which phytec-headless-image already installs.
 
+#
+# TIDL: edgeai-gst-plugins builds its DL plugins against edgeai-dl-inferer and
+# the ti-tidl-osrt runtimes. ti-tidl provides the TIDL-RT, TFLite delegate and
+# ONNX Runtime EP libraries, which are loaded at runtime, so list it explicitly.
+
 RDEPENDS:${PN} = " \
     ti-vision-apps \
     edgeai-apps-utils \
     edgeai-tiovx-kernels \
     edgeai-tiovx-modules \
     edgeai-gst-plugins \
+    edgeai-dl-inferer \
+    ti-tidl \
+    ti-tidl-osrt \
 "
 
 COMPATIBLE_MACHINE = "am62axx"
