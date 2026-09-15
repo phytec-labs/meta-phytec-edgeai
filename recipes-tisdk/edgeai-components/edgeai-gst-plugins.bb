@@ -24,9 +24,8 @@ PLAT_SOC:am62axx = "am62a"
 
 S = "${WORKDIR}/git"
 
-# Deep-learning plugins dropped: we need tiovxldc/tiovxmultiscaler only.
-# Upstream drops these via the :adas override, which does not apply here.
-DEPENDS = "edgeai-tiovx-modules edgeai-apps-utils gstreamer1.0-plugins-base"
+DEPENDS = "edgeai-tiovx-modules edgeai-apps-utils gstreamer1.0-plugins-base edgeai-dl-inferer ti-tidl-osrt"
+DEPENDS:remove:adas = " edgeai-dl-inferer ti-tidl-osrt"
 RDEPENDS:${PN}-source = "bash meson ninja"
 
 COMPATIBLE_MACHINE = "j721e|j721s2|j784s4|j742s2|j722s|am62axx"
@@ -37,7 +36,8 @@ PACKAGES += "${PN}-source"
 FILES:${PN}-source += "/opt/"
 FILES:${PN} += "${libdir}/gstreamer-1.0/*.so"
 
-EXTRA_OEMESON = "--prefix=/usr -Dpkg_config_path=${S}/pkgconfig -Ddl-plugins=disabled"
+EXTRA_OEMESON = "--prefix=/usr -Dpkg_config_path=${S}/pkgconfig"
+EXTRA_OEMESON:append:adas = " -Ddl-plugins=disabled"
 
 inherit meson pkgconfig
 
