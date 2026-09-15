@@ -1,0 +1,32 @@
+From: Garrett Giordano <ggiordano@phytec.com>
+Date: Tue, 15 Sep 2026 09:46:18 -0700
+Subject: [PATCH] arm64: dts: ti: k3-am62a-phycore-som: Reserve RTOS IPC memory
+
+The C7x, DM and MCU R5F firmware place their core-to-core IPC buffers
+(.bss:ipc_vring_mem) at 0xa0000000-0xa0ffffff, but the region is not
+reserved, so Linux may allocate it while the remote cores write to it.
+Reserve it the same way TI's k3-am62a-ti-ipc-firmware.dtsi does on 6.18.
+
+Upstream-Status: Inappropriate [6.12 only; 6.18 reserves it in k3-am62a-ti-ipc-firmware.dtsi]
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01VN7Y6oLSYhoB9kLNCBV4Vd
+Signed-off-by: Garrett Giordano <ggiordano@phytec.com>
+---
+ arch/arm64/boot/dts/ti/k3-am62a-phycore-som.dtsi | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+--- a/arch/arm64/boot/dts/ti/k3-am62a-phycore-som.dtsi
++++ b/arch/arm64/boot/dts/ti/k3-am62a-phycore-som.dtsi
+@@ -107,6 +107,12 @@
+ 			no-map;
+ 		};
+ 
++		rtos_ipc_memory_region: ipc-memories@a0000000 {
++			compatible = "shared-dma-pool";
++			reg = <0x00 0xa0000000 0x00 0x01000000>;
++			no-map;
++		};
++
+ 		edgeai_memory_region: edgeai-dma-memory@a1000000 {
+ 			compatible = "shared-dma-pool";
+ 			reg = <0x00 0xa1000000 0x00 0x02000000>;
