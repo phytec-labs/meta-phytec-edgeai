@@ -1,4 +1,4 @@
-# meta-phytec-evolv
+# meta-phytec-edgeai
 
 Camera capture, hardware dewarp, hardware encode and streaming for the Evolv
 pipeline on phyBOARD-Lyra AM62Ax.
