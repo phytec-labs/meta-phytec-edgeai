@@ -34,7 +34,7 @@ DT patch.
 | TIOVX userspace: ti-vision-apps (needs `CROSS_COMPILE_LINARO=${TARGET_PREFIX}`), edgeai-apps-utils, edgeai-tiovx-kernels, edgeai-tiovx-modules, edgeai-gst-plugins | `8fdfc63`, `62fb286`, `046fbbc`, `8c90ddd`, `90badcd` |
 | TIDL: ti-tidl (same `TARGET_PREFIX` fix, plus `FILES_SOLIBSDEV = ""` so the `.so` links stay in the runtime package), ti-tidl-osrt, edgeai-dl-inferer | `e24b40e`, `7db7e32`, `afd019e` |
 | DL plugins re-enabled in edgeai-gst-plugins (back to upstream) | `cc73d33` |
-| packagegroup-evolv-tiovx, then TIDL runtime added to it | `eeb71e7`, `1a2eda0` |
+| packagegroup-edgeai-tiovx, then TIDL runtime added to it | `eeb71e7`, `1a2eda0` |
 | Kernel DT patch reserving the IPC region, and the bbappend applying it | `2fab42b`, `f2cb304` |
 
 Already present in stock PD25.1.0, nothing to do:
