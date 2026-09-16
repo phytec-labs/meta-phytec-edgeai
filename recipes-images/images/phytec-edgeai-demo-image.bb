@@ -12,3 +12,7 @@ IMAGE_INSTALL:append:am62axx = " packagegroup-edgeai-camera"
 # runtime that offloads models to the C7x. TI-TFL licensed; drop this line for a
 # camera-only image.
 IMAGE_INSTALL:append:am62axx = " packagegroup-edgeai-tiovx"
+
+# C7x and TIDL test scripts in /usr/share/edgeai-tidl-test, and the model
+# artifacts they use in /opt/model_zoo, pinned to match this BSP's C7x firmware.
+IMAGE_INSTALL:append:am62axx = " edgeai-tidl-test edgeai-tidl-models"
