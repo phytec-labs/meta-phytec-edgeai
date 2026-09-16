@@ -1,5 +1,5 @@
 #!/bin/sh
-# evolv-camera-test -- exercise the capture / hardware-encode / stream path.
+# edgeai-camera-test -- exercise the capture / hardware-encode / stream path.
 #
 # Every test is wrapped in `timeout -k` so a wedged encoder cannot hang the
 # harness. That matters on this SoC: a stalled e5010 leaves its streaming
@@ -12,11 +12,11 @@ PORT=5000
 SECONDS_PER_TEST=5
 WIDTH=1280
 HEIGHT=720
-OUTDIR=/tmp/evolv-camera-test
+OUTDIR=/tmp/edgeai-camera-test
 
 usage() {
     cat <<EOF
-Usage: evolv-camera-test [options]
+Usage: edgeai-camera-test [options]
 
   --host ADDR    udpsink destination (default: $HOST)
   --port N       udpsink port (default: $PORT)
@@ -68,14 +68,14 @@ jpeg_irqs() {
 run() {
     desc=$1; shift
     printf '\n-- %s\n' "$desc"
-    if timeout -k 5 $((SECONDS_PER_TEST + 20)) "$@" >/tmp/evolv-gst.log 2>&1; then
+    if timeout -k 5 $((SECONDS_PER_TEST + 20)) "$@" >/tmp/edgeai-gst.log 2>&1; then
         ok "$desc"
         return 0
     fi
     rc=$?
     bad "$desc (rc=$rc)"
     [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ] && printf '         timed out -- likely encoder stall\n'
-    tail -5 /tmp/evolv-gst.log | sed 's/^/         /'
+    tail -5 /tmp/edgeai-gst.log | sed 's/^/         /'
     return 1
 }
 
@@ -90,7 +90,7 @@ fi
 
 ##############################################################################
 printf '\n=== 1. Hardware JPEG encoder (no camera) ===\n'
-# Evolv's exact reproducer. A static pattern must yield identical frame
+# The e5010 stale-TLB reproducer. A static pattern must yield identical frame
 # hashes; checkers-8 is stable where smpte is not (its noise block changes
 # every frame, which would mask corruption).
 IRQ_BEFORE=$(jpeg_irqs)
@@ -154,5 +154,5 @@ fi
 ##############################################################################
 printf '\n=== Summary ===\n'
 printf '  %d passed, %d failed\n' "$PASS" "$FAIL"
-printf '  artefacts in %s, gst log in /tmp/evolv-gst.log\n\n' "$OUTDIR"
+printf '  artefacts in %s, gst log in /tmp/edgeai-gst.log\n\n' "$OUTDIR"
 [ "$FAIL" -eq 0 ]
