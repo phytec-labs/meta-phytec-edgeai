@@ -1,5 +1,5 @@
 #!/bin/sh
-# evolv-tiovx-probe -- bring-up check for the TIOVX hardware dewarp path.
+# edgeai-tiovx-probe -- bring-up check for the TIOVX hardware dewarp path.
 #
 # Staged deliberately, because the failure modes are very different:
 #   1. plugin loads          -> the extracted meta-edgeai userspace is sound
