@@ -1,25 +1,27 @@
 # meta-phytec-edgeai
 
-Camera capture, hardware dewarp, hardware encode and streaming for the Evolv
-pipeline on phyBOARD-Lyra AM62Ax.
+Edge AI demo layer for the PHYTEC phyCORE-AM62Ax on phyBOARD-Lyra: camera
+capture, hardware encode and streaming, TI TIOVX hardware dewarp, and TIDL deep
+learning on the C7x DSP. ROS 2 Jazzy is optional.
 
 Built on **BSP-Yocto-Ampliphy-AM62Ax-PD25.1.0**: kernel
-`6.12.35-11.01.05-phy6`, GStreamer 1.22.12, Scarthgap.
+`6.12.35-11.01.05-phy6`, GStreamer 1.22.12, scarthgap.
 
 ## What it provides
 
-| Packagegroup | Contents |
+| Piece | Contents |
 |---|---|
-| `packagegroup-evolv-camera` | `v4l2jpegenc`, `v4l2h264enc`, `tcpserversink`, `udpsink`, `rtpjpegpay`, `rtph264pay`, plus the supporting plugins the pipelines need |
-| `packagegroup-evolv-tiovx` | TI TIOVX userspace: `tiovxldc` (dewarp) and `tiovxmultiscaler`, running on the C7x DSP and VPAC |
+| `phytec-edgeai-demo-image` | `phytec-headless-image` plus the packagegroups below |
+| `packagegroup-edgeai-camera` | GStreamer capture, hardware JPEG and H.264 encode, RTP/UDP and TCP streaming, and the `edgeai-camera-probe` / `edgeai-camera-test` scripts |
+| `packagegroup-edgeai-tiovx` | TI TIOVX and TIDL userspace: `tiovxldc`, `tiovxmultiscaler`, the TFLite delegate and ONNX Runtime provider that run models on the C7x, and `edgeai-tiovx-probe` |
+| `packagegroup-edgeai-ros` | ROS 2 Jazzy `ros-base`, `gscam`. Parsed only when meta-ros is in `bblayers.conf` |
+| kernel bbappend | Reserves the 16 MB RTOS IPC region at 0xa0000000, which no PD25.1.x device tree reserves |
+| `docs/tidl-test/` | Test record, scripts and reference results for the C7x and TIDL |
 
-`phytec-headless-image` installs both on `am62axx` only. Other machines in the
-BSP are unaffected.
-
-No kernel changes are needed. `phytec_ti_defconfig` already enables
+No kernel configuration changes are needed. `phytec_ti_defconfig` already enables
 `USB_VIDEO_CLASS`, `VIDEO_E5010_JPEG_ENC`, `VIDEO_WAVE_VPU` and
-`VIDEO_TI_J721E_CSI2RX`, and the SoM device tree already enables the C7x and
-its EdgeAI memory carveouts.
+`VIDEO_TI_J721E_CSI2RX`, and the SoM device tree already enables the C7x and its
+EdgeAI carveouts.
 
 ## Verified on hardware
 
@@ -27,104 +29,64 @@ On the AM62Ax devkit with a USB Logitech C920:
 
 | Check | Result |
 |---|---|
-| `evolv-camera-probe` | 12/12 |
-| `evolv-camera-test` | 7/7 |
-| `evolv-tiovx-probe` | 6/6 |
-| camera → `tiovxldc` → e5010 JPEG | 30/30 frames |
-| camera → `tiovxmultiscaler` → Wave5 H.264 → RTP/UDP | pass |
-| camera → LDC → multiscaler → JPEG → RTP/UDP | pass |
+| `edgeai-camera-probe` / `edgeai-camera-test` / `edgeai-tiovx-probe` | 12/12, 7/7, 6/6 |
+| camera to `tiovxldc` to e5010 JPEG | 30/30 frames |
+| camera to `tiovxmultiscaler` to Wave5 H.264 to RTP/UDP | pass |
+| TIOVX graph with a node on the C7x (`vx_app_c7x_kernel`) | 57600/57600 pixels correct |
+| MobileNetV1 (TFLite + TIDL) on the C7x | 6.4 ms against 70.0 ms on four A53 cores |
+| RegNetX-200MF (ONNX Runtime + TIDL) on the C7x | 6.5 ms against 61.4 ms |
+| 4000 inferences during a memory stress test | bit-identical outputs |
+
+See `docs/tidl-test/README.md` for how each was measured and how to repeat it.
 
 ## Setup
 
 ### 1. Set `DL_DIR` outside the BSP tree — required
 
-Add to `build/conf/local.conf`:
-
 ```
 DL_DIR = "/path/outside/the/bsp/downloads"
 ```
 
-**Do not skip this.** The BSP root is a `repo` client (it has a `.repo/`), and
-`ti-vision-apps` fetches with bitbake's `repo://` fetcher. With the default
-`DL_DIR` inside the BSP, `repo` walks up from the download directory, finds the
-BSP's own `.repo`, re-points it at TI's manifest, and `repo sync` **deletes
-every PHYTEC layer from `sources/`**.
-
-It fails almost silently: the fetch reports success, writes a 119-byte tarball,
-and the first error is an unrelated `do_unpack` failure. Check that no `.repo`
-exists at your chosen path or any directory above it.
+**Do not skip this.** The BSP root is a `repo` client and `ti-vision-apps`
+fetches with bitbake's `repo://` fetcher. With the default `DL_DIR` inside the
+BSP, `repo` finds the BSP's own `.repo`, re-points it at TI's manifest, and
+`repo sync` **deletes every PHYTEC layer from `sources/`**. It fails almost
+silently: the fetch reports success and writes a 119-byte tarball.
 
 ### 2. Add the layer
 
-In `build/conf/bblayers.conf`:
-
 ```
-BBLAYERS += "${OEROOT}/../meta-phytec-evolv"
+BBLAYERS += "${OEROOT}/../meta-phytec-edgeai"
 ```
 
 ### 3. Build
 
-Inside the build container:
-
 ```bash
 source sources/poky/oe-init-build-env
-bitbake-layers show-layers        # confirm phytec-evolv is listed
-bitbake phytec-headless-image
+bitbake-layers show-layers        # confirm phytec-edgeai is listed
+bitbake phytec-edgeai-demo-image
 ```
 
-`ti-vision-apps` and `do_rootfs` are memory-hungry. On a 32 GB host running a
-desktop, the default parallelism was OOM-killed; capping it fixed this:
+`ti-vision-apps`, `ti-tidl` and `do_rootfs` are memory-hungry. On a 32 GB host
+running a desktop, default parallelism was OOM-killed; `BB_NUMBER_THREADS = "8"`
+and `PARALLEL_MAKE = "-j 8"` fixed it. If a `ti-vision-apps` fetch is
+interrupted, run `bitbake -c cleanall ti-vision-apps` before rebuilding.
+
+### 4. Optional: ROS 2 Jazzy
+
+Add `meta-ros-common`, `meta-ros2` and `meta-ros2-jazzy` (branch `scarthgap`) to
+`bblayers.conf`. The ROS packagegroup is then parsed and added to the demo image
+automatically. Without them the layer builds unchanged.
+
+## On the board
 
 ```
-BB_NUMBER_THREADS = "8"
-PARALLEL_MAKE = "-j 8"
+edgeai-camera-probe     # camera, encoders and the GStreamer elements
+edgeai-camera-test      # capture, hardware encode, RTP/UDP and TCP streaming
+edgeai-tiovx-probe      # TIOVX plugin, libraries, C7x state, dewarp element
 ```
 
-If a `ti-vision-apps` fetch is ever interrupted, run
-`bitbake -c cleanall ti-vision-apps` before rebuilding. A stale fetch stamp
-otherwise makes `do_unpack` fail on a missing tarball.
-
-## Verifying on the board
-
-Plug in the USB camera, then:
-
-```
-evolv-camera-probe     # camera, encoders and the six elements
-evolv-camera-test      # capture, encode and stream
-evolv-tiovx-probe      # TIOVX plugin, libraries, C7x, dewarp element
-```
-
-`evolv-camera-test` runs:
-
-1. `videotestsrc → v4l2jpegenc → multifilesink`: hardware JPEG, no camera
-2. camera capture to a raw file
-3. camera → `v4l2jpegenc` → `rtpjpegpay` → `udpsink`, port 5000
-4. camera → `v4l2h264enc` → `rtph264pay` → `udpsink`, port 5002
-5. camera → `v4l2h264enc` → `tcpserversink`, port 5004
-
-Pass `--host <your-ip>` to stream to another machine, then receive with:
-
-```bash
-# JPEG (test 3)
-gst-launch-1.0 udpsrc port=5000 \
-  ! application/x-rtp,encoding-name=JPEG,payload=26 \
-  ! rtpjpegdepay ! jpegdec ! autovideosink
-
-# H.264 (test 4)
-gst-launch-1.0 udpsrc port=5002 \
-  ! application/x-rtp,encoding-name=H264,payload=96 \
-  ! rtph264depay ! avdec_h264 ! autovideosink
-```
-
-`evolv-tiovx-probe` checks in stages, because each failure means something
-different:
-
-1. plugin registers: the TIOVX userspace built correctly
-2. libraries resolve: no missing `.so`
-3. C7x remoteproc is `running`: firmware and carveouts are correct
-4. `tiovxldc` instantiates: the graph builds
-
-A typical dewarp pipeline:
+A dewarp pipeline:
 
 ```bash
 gst-launch-1.0 v4l2src device=/dev/videoN \
@@ -134,90 +96,78 @@ gst-launch-1.0 v4l2src device=/dev/videoN \
   ! v4l2jpegenc ! rtpjpegpay ! udpsink host=<ip> port=5000
 ```
 
-### Test 1 is an e5010 regression test
+For deep learning, follow `docs/tidl-test/README.md`. **Model artifacts must
+match the firmware's TIDL network version.** On PD25.1.0 that is TI's model-zoo
+folder `11_01_00_00` (network version 0x20250630); the default `11_01_00` folder
+now serves newer artifacts that this firmware rejects.
 
-It encodes a static `checkers-8` pattern and requires every frame to hash
-identically and the e5010 interrupt count to advance by exactly the frame
-count. This guards against the stale-TLB defect in the SDK 11.02 e5010 driver,
-which corrupts frames and then hangs the encoder.
+Test 1 of `edgeai-camera-test` is an e5010 regression test: a static pattern must
+hash identically every frame, with the interrupt count advancing by exactly the
+frame count. PD25.1.0 is not affected, but the test keeps the SDK 11.02 stale-TLB
+defect from returning silently.
 
-PD25.1.0 is not affected, because its 6.12.35 driver has no MMU layer. The
-test is there so a move to an 11.02-based BSP cannot bring the bug back
-silently. Don't use the `smpte` pattern: its noise block changes every frame
-and would hide the corruption.
+## TI components
 
-## TIOVX integration
-
-The TIOVX recipes come from TI's `meta-edgeai`, but the layer itself is not
-added. It cannot be used alongside a PHYTEC BSP:
-
-- `LAYERDEPENDS` requires four Arago layers that the BSP does not ship.
-- Its `layer.conf` requires an Arago distro include, so without them bitbake
-  fails at parse time.
-- `BBFILE_PRIORITY = "13"` would override `meta-ampliphy` and `meta-phytec`.
-
-Instead, five recipes are copied from `meta-edgeai` tag **`11.01.05.03`**, which
-matches PD25.1.0's SDK 11.01.05. TIOVX userspace, the C7x firmware and the
-kernel are ABI-coupled, so don't pull from the scarthgap branch head, which
-targets SDK 11.02.
+TI's `meta-edgeai` cannot be added as a layer here: it depends on four Arago
+layers the BSP does not ship, requires an Arago distro include at parse time, and
+its priority 13 would override `meta-ampliphy` and `meta-phytec`. Instead the
+recipes are copied from tag **`11.01.05.03`**, which matches PD25.1.0's SDK
+11.01.05. TIOVX userspace, the TIDL runtime, the C7x firmware and the kernel are
+version-coupled, so do not pull from the branch head.
 
 | Recipe | Change from upstream |
 |---|---|
-| `ti-vision-apps` | `CROSS_COMPILE_LINARO=${TARGET_PREFIX}`. Upstream hardcodes Arago's `aarch64-oe-linux-`, which fails under any other distro. |
-| `edgeai-gst-plugins` | Drops `edgeai-dl-inferer`/`ti-tidl-osrt` and sets `-Ddl-plugins=disabled`. Dewarp does not need the TIDL runtime. |
-| `edgeai-apps-utils`, `edgeai-tiovx-kernels`, `edgeai-tiovx-modules` | none |
+| `ti-vision-apps`, `ti-tidl` | `CROSS_COMPILE_LINARO=${TARGET_PREFIX}`; upstream hardcodes Arago's triple |
+| `ti-tidl` | `FILES_SOLIBSDEV = ""`, so the `.so` links stay in the runtime package. ONNX Runtime, DLR and the TFLite delegate load the TIDL libraries by their unversioned names |
+| `edgeai-gst-plugins` | none; DL plugins enabled |
+| `edgeai-apps-utils`, `edgeai-tiovx-kernels`, `edgeai-tiovx-modules`, `ti-tidl-osrt`, `edgeai-dl-inferer` | none |
 
 The C7x firmware is not in this layer. `meta-ti-bsp`'s `ti-rtos-echo-test-fw`
-installs `dsp_edgeai_c7x_1_release_strip.out` as `am62a-c71_0-fw` on
-`am62axx`, and it reaches the image through `packagegroup-coprocessor`. Despite
-the recipe name, on this SoC it is the real EdgeAI firmware, not a test stub.
+installs `dsp_edgeai_c7x_1_release_strip.out` as `am62a-c71_0-fw`, and it reaches
+the image through `packagegroup-coprocessor`. Despite the recipe name, on this
+SoC it is the real EdgeAI firmware.
 
-### Licensing
-
-The TIOVX components are licensed `TI-TFL`, the same TI firmware licence as the
-C7x firmware already in the stock image. They are kept in their own
-packagegroup so they can be left out: comment out the
-`packagegroup-evolv-tiovx` line in
-`recipes-core/images/phytec-headless-image.bbappend`.
+**Licensing:** the TI components are `TI-TFL`, the same licence as the C7x
+firmware in the stock image. They are in their own packagegroup, so dropping the
+`packagegroup-edgeai-tiovx` line from the demo image leaves a camera-only build.
 
 ## Gotchas
 
-- **`/dev/videoN` numbering changes between boots.** On the same image the
-  camera has been `video1` on one boot and `video0` on the next, and the e5010
-  has moved from `video0` to `video2`. Find devices by driver name with
-  `v4l2-ctl --info`. For the codecs, use the stable `/dev/video-enc0` and
-  `/dev/video-dec0` symlinks. The Wave5 driver reports itself as
-  `wave5-enc`/`wave5-dec`.
+- **`/dev/videoN` numbering changes between boots.** Find devices by driver name
+  with `v4l2-ctl --info`, and use `/dev/video-enc0` and `/dev/video-dec0` for the
+  codecs. The Wave5 driver reports itself as `wave5-enc` / `wave5-dec`.
 - **The UVC metadata node also reports driver `uvcvideo`.** Also check that
   `v4l2-ctl --list-formats` lists capture formats.
-- **Encoder elements need `/dev/video*` access.** The nodes are
-  `root:video 0660`, and gst-v4l2 only registers encoders it can open while
-  probing. A user outside the `video` group sees no encoder elements at all.
-- **There is no `gstreamer1.0-tools` package in OE-core.** `gst-inspect-1.0`
-  and `gst-launch-1.0` are in the `gstreamer1.0` package.
+- **Encoder elements need `/dev/video*` access.** The nodes are `root:video 0660`
+  and gst-v4l2 only registers encoders it can open while probing.
+- **There is no `gstreamer1.0-tools` package in OE-core.** `gst-inspect-1.0` and
+  `gst-launch-1.0` are in the `gstreamer1.0` package.
 - **`PACKAGECONFIG[v4l2]` is enabled only by OE-core's default list.** A layer
-  that sets `PACKAGECONFIG` for `gstreamer1.0-plugins-good`, instead of
-  appending to it, silently removes `v4l2jpegenc` and `v4l2h264enc`.
+  that sets `PACKAGECONFIG` instead of appending silently removes `v4l2jpegenc`
+  and `v4l2h264enc`.
+- **On the target, BusyBox `dmesg` has no `--level`** (use `journalctl -k -p
+  warning`) and BusyBox `diff` writes unified output.
 
 ## Known limits
 
-- **Dewarp output is not verified as geometrically correct.** `tiovxldc`
-  remaps using a lens-distortion LUT generated for one specific lens. A C920 is
-  rectilinear, so it has nothing to correct. The tests show that the plugin
-  loads, the C7x runs and frames flow through the pipeline. Checking correctness
-  needs the target fisheye module and its LUT.
-- **ROS 2 is not included.** On Yocto that means `meta-ros` (`meta-ros-common`,
-  `meta-ros2`, `meta-ros2-jazzy`, branch `scarthgap`), which is a separate and
-  large layer addition.
+- **Dewarp output is not verified as geometrically correct.** `tiovxldc` remaps
+  using a lens-distortion LUT for one specific lens; a C920 is rectilinear.
+  Checking correctness needs the target fisheye module and its LUT.
+- **PD26 is not covered yet.** Its C7x firmware differs from PD25.1.0's, so the
+  TIDL userspace and model artifacts have to be matched to it first. See section
+  6 of `docs/tidl-test/README.md`.
 
 ## Layout
 
 ```
-conf/layer.conf                                     priority 25
-recipes-core/images/phytec-headless-image.bbappend  installs both packagegroups
+conf/layer.conf                                       priority 25
+recipes-images/images/phytec-edgeai-demo-image.bb     the demo image
 recipes-images/packagegroups/
-    packagegroup-evolv-camera.bb                    GStreamer stack
-    packagegroup-evolv-tiovx.bb                     TIOVX userspace
-recipes-support/evolv-camera-tools/                 probe and test scripts
-recipes-tisdk/                                      recipes from meta-edgeai
+    packagegroup-edgeai-camera.bb                     GStreamer stack
+    packagegroup-edgeai-tiovx.bb                      TIOVX + TIDL userspace
+recipes-support/edgeai-camera-tools/                  probe and test scripts
+recipes-tisdk/                                        recipes from meta-edgeai
+recipes-kernel/linux/                                 RTOS IPC reservation patch
+dynamic-layers/ros2-jazzy-layer/                      ROS 2, when meta-ros is present
+docs/tidl-test/                                       C7x and TIDL test record
 ```
