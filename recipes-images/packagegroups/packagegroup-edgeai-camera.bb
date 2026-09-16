@@ -1,11 +1,11 @@
-DESCRIPTION = "GStreamer camera / encode / stream stack for the Evolv pipeline on AM62Ax"
+DESCRIPTION = "GStreamer camera / encode / stream stack for the AM62Ax Edge AI demo"
 LICENSE = "MIT"
 
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 inherit packagegroup
 
-# The eight elements Evolv asked for split into two groups. Six are stock
+# The GStreamer elements the demo pipelines need, split into two groups. Six are stock
 # OE-core and are covered below. The remaining two (tiovxldc,
 # tiovxmultiscaler) come from TI's meta-edgeai and are NOT installed here --
 # see README.md for why that is a separate piece of work.
@@ -47,5 +47,5 @@ RDEPENDS:${PN} = " \
     ${GST_CORE} \
     ${GST_PIPELINE_SUPPORT} \
     v4l-utils \
-    evolv-camera-tools \
+    edgeai-camera-tools \
 "
