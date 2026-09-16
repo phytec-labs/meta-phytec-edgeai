@@ -5,7 +5,7 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 inherit packagegroup
 
-# Kept separate from packagegroup-evolv-camera so the standard GStreamer stack
+# Kept separate from packagegroup-edgeai-camera so the standard GStreamer stack
 # (Bucket 1) can ship without pulling TI's TIOVX userspace, which carries the
 # TI-TFL licence and is only needed for tiovxldc / tiovxmultiscaler.
 #
@@ -20,6 +20,9 @@ inherit packagegroup
 # the ti-tidl-osrt runtimes. ti-tidl provides the TIDL-RT, TFLite delegate and
 # ONNX Runtime EP libraries, which are loaded at runtime, so list it explicitly.
 
+# TI's TFLite and ONNX Runtime wheels import numpy at runtime, and nothing in
+# the TIDL recipes depends on it, so list it here.
+
 RDEPENDS:${PN} = " \
     ti-vision-apps \
     edgeai-apps-utils \
@@ -29,6 +32,7 @@ RDEPENDS:${PN} = " \
     edgeai-dl-inferer \
     ti-tidl \
     ti-tidl-osrt \
+    python3-numpy \
 "
 
 COMPATIBLE_MACHINE = "am62axx"
