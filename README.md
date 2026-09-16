@@ -16,6 +16,8 @@ Built on **BSP-Yocto-Ampliphy-AM62Ax-PD25.1.0**: kernel
 | `packagegroup-edgeai-tiovx` | TI TIOVX and TIDL userspace: `tiovxldc`, `tiovxmultiscaler`, the TFLite delegate and ONNX Runtime provider that run models on the C7x, and `edgeai-tiovx-probe` |
 | `packagegroup-edgeai-ros` | ROS 2 Jazzy `ros-base`, `gscam`. Parsed only when meta-ros is in `bblayers.conf` |
 | kernel bbappend | Reserves the 16 MB RTOS IPC region at 0xa0000000, which no PD25.1.x device tree reserves |
+| `edgeai-tidl-test` | The scripts from `docs/tidl-test/`, installed in `/usr/share/edgeai-tidl-test` |
+| `edgeai-tidl-models` | TI model-zoo artifacts matching this firmware (`11_01_00_00`), in `/opt/model_zoo` |
 | `docs/tidl-test/` | Test record, scripts and reference results for the C7x and TIDL |
 
 No kernel configuration changes are needed. `phytec_ti_defconfig` already enables
@@ -96,10 +98,20 @@ gst-launch-1.0 v4l2src device=/dev/videoN \
   ! v4l2jpegenc ! rtpjpegpay ! udpsink host=<ip> port=5000
 ```
 
-For deep learning, follow `docs/tidl-test/README.md`. **Model artifacts must
-match the firmware's TIDL network version.** On PD25.1.0 that is TI's model-zoo
-folder `11_01_00_00` (network version 0x20250630); the default `11_01_00` folder
-now serves newer artifacts that this firmware rejects.
+For deep learning, the demo image ships the test scripts and matching models:
+
+```bash
+cd /usr/share/edgeai-tidl-test
+python3 tidl_check.py cat224.raw /opt/model_zoo tfl_cpu,tfl_tidl,onnx_cpu,onnx_tidl
+./c7x_kernel_test.sh     # TIOVX graph with a node on the C7x
+```
+
+`docs/tidl-test/README.md` covers each step, the evidence that the work runs on
+the C7x, and the reference numbers. **Model artifacts must match the firmware's
+TIDL network version.** On PD25.1.0 that is TI's model-zoo folder `11_01_00_00`
+(network version 0x20250630); the default `11_01_00` folder now serves newer
+artifacts that this firmware rejects, which is why `edgeai-tidl-models` pins the
+former.
 
 Test 1 of `edgeai-camera-test` is an e5010 regression test: a static pattern must
 hash identically every frame, with the interrupt count advancing by exactly the
