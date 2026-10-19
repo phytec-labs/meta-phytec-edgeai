@@ -11,13 +11,13 @@ SRC_URI = " \
     file://edgeai-tiovx-probe \
 "
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 
 do_install() {
     install -d ${D}${bindir}
-    install -m 0755 ${WORKDIR}/edgeai-camera-probe ${D}${bindir}/
-    install -m 0755 ${WORKDIR}/edgeai-camera-test  ${D}${bindir}/
-    install -m 0755 ${WORKDIR}/edgeai-tiovx-probe  ${D}${bindir}/
+    install -m 0755 ${S}/edgeai-camera-probe ${D}${bindir}/
+    install -m 0755 ${S}/edgeai-camera-test  ${D}${bindir}/
+    install -m 0755 ${S}/edgeai-tiovx-probe  ${D}${bindir}/
 }
 
 # Both scripts are shell; the runtime dependencies are the tools they call.
