@@ -1,6 +1,9 @@
-# Extracted verbatim from TI meta-edgeai at tag 11.01.05.03 (SDK 11.01),
-# to match this BSP's PD25.1.0 kernel (6.12.35-11.01.05-phy6). Taking the
-# recipes directly avoids pulling in meta-edgeai's four meta-arago layer deps.
+# Extracted verbatim from TI meta-edgeai at tag REL.PSDK.ANALYTICS.11.02.00.03.
+# Its arm-tidl (67eba49d) expects C7x firmware 11_02_02_00, TIDL network
+# version 0x20251208: the generation PD25.1.1 (ti-linux-firmware 8ec0c42b) and
+# PD26.1.0 (9dffeff8) ship. Newer meta-edgeai tags expect 11_02_20_00
+# (0x20260819) and that C7x would reject their networks. Taking the recipes
+# directly avoids meta-edgeai's four meta-arago layer deps.
 
 SUMMARY = "EdgeAI GST plugins"
 DESCRIPTION = "EdgeAI GST plugins implements custom elements to offload compute to HW accelerators and DSPs on TI devices"
@@ -12,7 +15,7 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=1f7721ee7d288457c5a70d0c8ff44b87"
 PV = "1.0.0"
 BRANCH = "main"
 SRC_URI = "git://github.com/TexasInstruments/edgeai-gst-plugins.git;branch=${BRANCH};protocol=https"
-SRCREV = "fea12213b449fc1ea117ad5f0016c08f417ab46d"
+SRCREV = "ad59325325ef96cb132600b77f753cd88740501e"
 
 PLAT_SOC = ""
 PLAT_SOC:j721e = "j721e"
@@ -44,8 +47,9 @@ inherit meson pkgconfig
 do_install:append() {
     CP_ARGS="-Prf --preserve=mode,timestamps --no-preserve=ownership"
 
-    mkdir -p ${D}/opt/edgeai-gst-plugins
+    mkdir -p ${D}/opt/edgeai-gst-plugins/build
     cp ${CP_ARGS} ${S}/* ${D}/opt/edgeai-gst-plugins
+    cp ${CP_ARGS} ${B}/tests ${D}/opt/edgeai-gst-plugins/build
 }
 
 INSANE_SKIP:${PN}-source += "dev-deps"

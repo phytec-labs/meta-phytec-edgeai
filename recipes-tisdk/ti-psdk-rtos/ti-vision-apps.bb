@@ -1,13 +1,16 @@
-# Extracted verbatim from TI meta-edgeai at tag 11.01.05.03 (SDK 11.01),
-# to match this BSP's PD25.1.0 kernel (6.12.35-11.01.05-phy6). Taking the
-# recipes directly avoids pulling in meta-edgeai's four meta-arago layer deps.
+# Extracted verbatim from TI meta-edgeai at tag REL.PSDK.ANALYTICS.11.02.00.03.
+# Its arm-tidl (67eba49d) expects C7x firmware 11_02_02_00, TIDL network
+# version 0x20251208: the generation PD25.1.1 (ti-linux-firmware 8ec0c42b) and
+# PD26.1.0 (9dffeff8) ship. Newer meta-edgeai tags expect 11_02_20_00
+# (0x20260819) and that C7x would reject their networks. Taking the recipes
+# directly avoids meta-edgeai's four meta-arago layer deps.
 
 SUMMARY = "OpenVX Middleware library"
 DESCRIPTION = "Builds tivision_apps user space library"
 
-PR:append = "_edgeai_13"
+PR:append = "_edgeai_15"
 
-PV = "11.01.00"
+PV = "11.02.03"
 
 LICENSE = "TI-TFL & BSD-2-Clause & BSD-3-Clause & BSD-4-Clause & MIT & Apache-2.0 & Apache-2.0-with-LLVM-exception & \
            Khronos & Hewlett-Packard & Patrick-Powell & FTL & Zlib & CC0-1.0 & OpenSSL"
@@ -28,9 +31,9 @@ LIC_FILES_CHKSUM = "file://${COREBASE}/../meta-ti/meta-ti-bsp/licenses/TI-TFL;md
                     file://${COREBASE}/meta/files/common-licenses/OpenSSL;md5=4eb1764f3e65fafa1a25057f9082f2ae \
                     "
 
-SRC_URI = "repo://git.ti.com/git/processor-sdk/psdk_repo_manifests.git;protocol=https;branch=refs/tags/REL.PSDK.ANALYTICS.11.00.00.06;manifest=vision_apps_yocto.xml"
-SRC_URI:am62axx = "repo://git.ti.com/git/processor-sdk/psdk_repo_manifests.git;protocol=https;branch=refs/tags/REL.PSDK.ANALYTICS.AM62A.11.01.00.03;manifest=vision_apps_yocto_am62a.xml"
-
+SRC_URI = "repo://git.ti.com/git/processor-sdk/psdk_repo_manifests.git;protocol=https;branch=refs/tags/REL.PSDK.ANALYTICS.11.02.00.03;manifest=vision_apps_yocto.xml"
+SRC_URI:am62axx = "repo://git.ti.com/git/processor-sdk/psdk_repo_manifests.git;protocol=https;branch=refs/tags/REL.PSDK.ANALYTICS.AM62A.11.02.01.02;manifest=vision_apps_yocto_am62a.xml"
+SRC_URI:edgeai = "repo://git.ti.com/git/processor-sdk/psdk_repo_manifests.git;protocol=https;branch=refs/tags/REL.PSDK.ANALYTICS.NONSAFETY.11.01.00.03;manifest=vision_apps_yocto_nonsafety.xml"
 FILES:${PN} += "/opt/*"
 
 #PTK needs:
@@ -39,9 +42,8 @@ FILES:${PN} += "/opt/*"
 # IL/il.h
 # /usr/include/freetype2/ft2build.h
 # ti_rpmsg_char.h
-# dlr.h
 
-DEPENDS = "glm freetype ti-rpmsg-char repo-native virtual/egl libpam"
+DEPENDS = "glm freetype ti-rpmsg-char repo-native virtual/egl libpam nlohmann-json stb"
 
 COMPATIBLE_MACHINE = "j721e|j721s2|j784s4|j722s|j742s2|am62axx"
 
