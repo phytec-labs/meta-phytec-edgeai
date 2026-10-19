@@ -20,19 +20,19 @@ SRC_URI = " \
     file://cat224.raw \
 "
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 TESTDIR = "${datadir}/edgeai-tidl-test"
 
 do_install() {
     install -d ${D}${TESTDIR}
-    install -m 0755 ${WORKDIR}/tidl_check.py ${D}${TESTDIR}/
-    install -m 0755 ${WORKDIR}/tidl_proof.py ${D}${TESTDIR}/
-    install -m 0755 ${WORKDIR}/c7x_log.py ${D}${TESTDIR}/
-    install -m 0755 ${WORKDIR}/c7x_kernel_test.sh ${D}${TESTDIR}/
-    install -m 0755 ${WORKDIR}/negative_control.sh ${D}${TESTDIR}/
+    install -m 0755 ${S}/tidl_check.py ${D}${TESTDIR}/
+    install -m 0755 ${S}/tidl_proof.py ${D}${TESTDIR}/
+    install -m 0755 ${S}/c7x_log.py ${D}${TESTDIR}/
+    install -m 0755 ${S}/c7x_kernel_test.sh ${D}${TESTDIR}/
+    install -m 0755 ${S}/negative_control.sh ${D}${TESTDIR}/
     # carveout_check.py runs on the build host, against a decompiled DTB.
-    install -m 0644 ${WORKDIR}/carveout_check.py ${D}${TESTDIR}/
-    install -m 0644 ${WORKDIR}/cat224.raw ${D}${TESTDIR}/
+    install -m 0644 ${S}/carveout_check.py ${D}${TESTDIR}/
+    install -m 0644 ${S}/cat224.raw ${D}${TESTDIR}/
 }
 
 RDEPENDS:${PN} = "python3-core python3-numpy ti-vision-apps ti-tidl"
