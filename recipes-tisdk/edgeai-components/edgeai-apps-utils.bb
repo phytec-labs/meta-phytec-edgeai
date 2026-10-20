@@ -1,6 +1,9 @@
-# Extracted verbatim from TI meta-edgeai at tag 11.01.05.03 (SDK 11.01),
-# to match this BSP's PD25.1.0 kernel (6.12.35-11.01.05-phy6). Taking the
-# recipes directly avoids pulling in meta-edgeai's four meta-arago layer deps.
+# Extracted verbatim from TI meta-edgeai at tag REL.PSDK.ANALYTICS.11.02.00.03.
+# Its arm-tidl (67eba49d) expects C7x firmware 11_02_02_00, TIDL network
+# version 0x20251208, which is what PD25.1.1 ships (ti-linux-firmware
+# 8ec0c42b). Newer meta-edgeai tags expect 11_02_20_00 (0x20260819) and that
+# C7x would reject their networks. Taking the recipes directly avoids
+# meta-edgeai's four meta-arago layer deps.
 
 SUMMARY = "EdgeAI Apps Utils"
 DESCRIPTION = "EdgeAI Apps Utils implements ARMv8 neon optimized utility functions and also NV12 post process utility functions "
