@@ -11,7 +11,11 @@ DESCRIPTION = "Open Source DL/ML runtime Modules like TF-LITE, ONNX and TVM Runt
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
-S = "${WORKDIR}/src"
+# The SRC_URI entries below unpack with subdir=${S}/..., and bitbake requires
+# that to sit inside the unpack root. On wrynose that root is ${WORKDIR}/sources,
+# so ${WORKDIR}/src is rejected. UNPACKDIR is ${WORKDIR} on scarthgap, which
+# keeps TI's original layout there.
+S = "${UNPACKDIR}/src"
 PR:append = "_edgeai_5"
 
 SRC_URI = "https://software-dl.ti.com/jacinto7/esd/tidl-tools/11_02_02_00/OSRT_TOOLS/ARM_LINUX/ARAGO/tflite_runtime-2.12.0-cp312-cp312-linux_aarch64.whl;name=tflite;subdir=${S}/tflite\
